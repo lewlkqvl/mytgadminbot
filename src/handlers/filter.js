@@ -11,8 +11,18 @@ function setupFilterHandler(bot) {
 
     await requireAdmin(bot, msg, async () => {
       db.addFilter(chatId, keyword);
-      bot.sendMessage(chatId, `✅ 已添加过滤关键词: "${keyword}"`);
-      logger.info(`添加过滤关键词 in chat ${chatId}: ${keyword}`);
+
+      // 确认关键词已添加
+      const filters = db.getFilters(chatId);
+      const added = filters.some(f => f.keyword === keyword.toLowerCase());
+
+      if (added) {
+        bot.sendMessage(chatId, `✅ 已添加过滤关键词: "${keyword}"\n\n当前共有 ${filters.length} 个过滤关键词`);
+        logger.info(`✅ 添加过滤关键词成功 in chat ${chatId}: "${keyword}"`);
+      } else {
+        bot.sendMessage(chatId, `❌ 添加过滤关键词失败: "${keyword}"`);
+        logger.error(`❌ 添加过滤关键词失败 in chat ${chatId}: "${keyword}"`);
+      }
     });
   });
 
@@ -59,19 +69,36 @@ function setupFilterHandler(bot) {
 
     try {
       // 检查关键词过滤
-      if (db.checkFilter(chatId, text)) {
-        if (await isBotAdmin(bot, chatId)) {
-          await bot.deleteMessage(chatId, msg.message_id);
-          const username = msg.from.username ? `@${msg.from.username}` : msg.from.first_name;
+      const hasFilteredWord = db.checkFilter(chatId, text);
 
-          await bot.sendMessage(
-            chatId,
-            `⚠️ ${username} 的消息包含违禁词已被删除`,
-            { parse_mode: 'Markdown' }
-          );
+      if (hasFilteredWord) {
+        logger.info(`检测到违禁词 in chat ${chatId}, 消息: "${text}"`);
 
-          db.incrementStat(chatId, 'deletedMessages');
-          logger.info(`删除包含违禁词的消息 from ${username} in chat ${chatId}`);
+        const botIsAdmin = await isBotAdmin(bot, chatId);
+        logger.info(`Bot 管理员状态 in chat ${chatId}: ${botIsAdmin}`);
+
+        if (botIsAdmin) {
+          try {
+            await bot.deleteMessage(chatId, msg.message_id);
+            const username = msg.from.username ? `@${msg.from.username}` : msg.from.first_name;
+
+            const warningMsg = await bot.sendMessage(
+              chatId,
+              `⚠️ ${username} 的消息包含违禁词已被删除`
+            );
+
+            // 3秒后删除警告消息
+            setTimeout(() => {
+              bot.deleteMessage(chatId, warningMsg.message_id).catch(() => {});
+            }, 3000);
+
+            db.incrementStat(chatId, 'deletedMessages');
+            logger.info(`✅ 已删除包含违禁词的消息 from ${username} in chat ${chatId}`);
+          } catch (deleteError) {
+            logger.error(`删除消息失败:`, deleteError.message);
+          }
+        } else {
+          logger.warn(`⚠️ Bot 不是管理员，无法删除消息 in chat ${chatId}`);
         }
         return;
       }
