@@ -9,6 +9,11 @@ function setupFilterHandler(bot) {
     const chatId = msg.chat.id;
     const keyword = match[1].trim();
 
+    // 只允许在群组中使用
+    if (msg.chat.type !== 'group' && msg.chat.type !== 'supergroup') {
+      return bot.sendMessage(chatId, '❌ 此命令只能在群组中使用');
+    }
+
     await requireAdmin(bot, msg, async () => {
       db.addFilter(chatId, keyword);
 
@@ -31,6 +36,11 @@ function setupFilterHandler(bot) {
     const chatId = msg.chat.id;
     const keyword = match[1].trim();
 
+    // 只允许在群组中使用
+    if (msg.chat.type !== 'group' && msg.chat.type !== 'supergroup') {
+      return bot.sendMessage(chatId, '❌ 此命令只能在群组中使用');
+    }
+
     await requireAdmin(bot, msg, async () => {
       db.removeFilter(chatId, keyword);
       bot.sendMessage(chatId, `✅ 已删除过滤关键词: "${keyword}"`);
@@ -41,6 +51,11 @@ function setupFilterHandler(bot) {
   // 列出所有过滤关键词 /filter list
   bot.onText(/\/filter(?:@\w+)? list/, async (msg) => {
     const chatId = msg.chat.id;
+
+    // 只允许在群组中使用
+    if (msg.chat.type !== 'group' && msg.chat.type !== 'supergroup') {
+      return bot.sendMessage(chatId, '❌ 此命令只能在群组中使用');
+    }
 
     await requireAdmin(bot, msg, async () => {
       const filters = db.getFilters(chatId);

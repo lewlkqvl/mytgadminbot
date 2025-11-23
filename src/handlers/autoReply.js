@@ -8,6 +8,11 @@ function setupAutoReplyHandler(bot) {
     const chatId = msg.chat.id;
     const params = match[1];
 
+    // 只允许在群组中使用
+    if (msg.chat.type !== 'group' && msg.chat.type !== 'supergroup') {
+      return bot.sendMessage(chatId, '❌ 此命令只能在群组中使用');
+    }
+
     await requireAdmin(bot, msg, async () => {
       const parts = params.split('|').map(p => p.trim());
 
@@ -31,6 +36,11 @@ function setupAutoReplyHandler(bot) {
     const chatId = msg.chat.id;
     const trigger = match[1].trim();
 
+    // 只允许在群组中使用
+    if (msg.chat.type !== 'group' && msg.chat.type !== 'supergroup') {
+      return bot.sendMessage(chatId, '❌ 此命令只能在群组中使用');
+    }
+
     await requireAdmin(bot, msg, async () => {
       db.removeAutoReply(chatId, trigger);
       bot.sendMessage(chatId, `✅ 已删除自动回复: "${trigger}"`);
@@ -41,6 +51,11 @@ function setupAutoReplyHandler(bot) {
   // 列出所有自动回复 /autoreply list
   bot.onText(/\/autoreply(?:@\w+)? list/, async (msg) => {
     const chatId = msg.chat.id;
+
+    // 只允许在群组中使用
+    if (msg.chat.type !== 'group' && msg.chat.type !== 'supergroup') {
+      return bot.sendMessage(chatId, '❌ 此命令只能在群组中使用');
+    }
 
     await requireAdmin(bot, msg, async () => {
       const replies = db.getAutoReplies(chatId);
