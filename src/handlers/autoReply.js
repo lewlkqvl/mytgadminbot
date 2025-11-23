@@ -60,7 +60,11 @@ function setupAutoReplyHandler(bot) {
 
   // 监听消息并触发自动回复
   bot.on('message', async (msg) => {
+    // 只处理文本消息，跳过命令
     if (!msg.text || msg.text.startsWith('/')) return;
+
+    // 只处理群组消息，不处理私聊（私聊用于验证）
+    if (msg.chat.type !== 'group' && msg.chat.type !== 'supergroup') return;
 
     const chatId = msg.chat.id;
     const reply = db.findAutoReply(chatId, msg.text);
