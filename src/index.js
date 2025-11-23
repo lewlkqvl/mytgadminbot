@@ -64,12 +64,14 @@ bot.on('error', (error) => {
 // 优雅退出
 process.on('SIGINT', async () => {
   logger.info('收到退出信号，正在关闭...');
+  await db.saveStats(); // 保存统计数据
   await bot.stopPolling();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
   logger.info('收到终止信号，正在关闭...');
+  await db.saveStats(); // 保存统计数据
   await bot.stopPolling();
   process.exit(0);
 });

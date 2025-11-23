@@ -13,17 +13,26 @@ class Database {
     this.filters = [];
     this.autoReplies = [];
     this.userMessages = new Map(); // 用于反垃圾信息追踪
+    this.initialized = false; // 初始化标志
   }
 
   async init() {
+    // 防止重复初始化
+    if (this.initialized) {
+      logger.warn('数据库已经初始化，跳过重复初始化');
+      return;
+    }
+
     try {
       await fs.mkdir(DB_PATH, { recursive: true });
       await this.loadStats();
       await this.loadFilters();
       await this.loadAutoReplies();
+      this.initialized = true;
       logger.info('数据库初始化成功');
     } catch (error) {
       logger.error('数据库初始化失败:', error);
+      throw error;
     }
   }
 
@@ -45,6 +54,17 @@ class Database {
     }
   }
 
+  // 定期保存统计数据（防止频繁写入文件）
+  scheduleSaveStats() {
+    if (this.saveStatsTimer) {
+      return;
+    }
+    this.saveStatsTimer = setTimeout(async () => {
+      await this.saveStats();
+      this.saveStatsTimer = null;
+    }, 5000); // 5秒后保存
+  }
+
   incrementStat(chatId, stat) {
     if (!this.stats[chatId]) {
       this.stats[chatId] = {
@@ -57,7 +77,9 @@ class Database {
       };
     }
     this.stats[chatId][stat] = (this.stats[chatId][stat] || 0) + 1;
-    this.saveStats();
+
+    // 使用定时器批量保存，避免频繁写入
+    this.scheduleSaveStats();
   }
 
   getStats(chatId) {
