@@ -108,12 +108,16 @@ function setupVerificationHandler(bot) {
 
   // 监听消息进行验证
   bot.on('message', async (msg) => {
+    // 只处理文本消息
     if (!msg.text) return;
-    if (msg.text.startsWith('/')) return; // 跳过命令
+
+    // 跳过命令
+    if (msg.text.startsWith('/')) return;
 
     const userId = msg.from.id;
     const chatId = msg.chat.id;
 
+    // 检查用户是否在待验证列表中
     if (!pendingVerifications.has(userId)) {
       return;
     }
@@ -122,26 +126,43 @@ function setupVerificationHandler(bot) {
 
     // 检查是否是正确的群组
     if (chatId !== verification.chatId) {
+      logger.debug(`用户 ${userId} 在错误的群组中发送消息，跳过验证处理`);
       return;
     }
+
+    logger.info(`收到用户 ${verification.username} 的验证输入: ${msg.text}`);
 
     try {
       const userInput = msg.text.trim().toLowerCase();
 
-      // 删除用户的输入消息
-      await bot.deleteMessage(chatId, msg.message_id);
+      // 尝试删除用户的输入消息（如果失败也继续处理）
+      try {
+        await bot.deleteMessage(chatId, msg.message_id);
+        logger.debug(`已删除用户输入消息`);
+      } catch (deleteError) {
+        logger.warn(`删除用户输入消息失败:`, deleteError.message);
+      }
+
+      // 比对验证码
+      logger.info(`验证码比对: 用户输入="${userInput}", 正确答案="${verification.captchaText}"`);
 
       if (userInput === verification.captchaText) {
         // 验证成功
+        logger.info(`✅ 验证成功: ${verification.username}`);
         clearTimeout(verification.timeoutId);
 
         // 恢复完整权限
-        await bot.restrictChatMember(chatId, userId, {
-          can_send_messages: true,
-          can_send_media_messages: true,
-          can_send_other_messages: true,
-          can_add_web_page_previews: true
-        });
+        try {
+          await bot.restrictChatMember(chatId, userId, {
+            can_send_messages: true,
+            can_send_media_messages: true,
+            can_send_other_messages: true,
+            can_add_web_page_previews: true
+          });
+          logger.info(`已恢复用户权限: ${verification.username}`);
+        } catch (permError) {
+          logger.error(`恢复用户权限失败:`, permError.message);
+        }
 
         const successMsg = await bot.sendMessage(chatId, `✅ ${verification.username} 验证成功，欢迎加入！`);
 
@@ -157,13 +178,20 @@ function setupVerificationHandler(bot) {
       } else {
         // 验证码错误
         verification.attempts += 1;
+        logger.info(`❌ 验证失败: ${verification.username}, 尝试次数: ${verification.attempts}/3`);
 
         if (verification.attempts >= 3) {
           // 3次失败，踢出
+          logger.info(`⛔ 3次验证失败，踢出用户: ${verification.username}`);
           clearTimeout(verification.timeoutId);
 
-          await bot.kickChatMember(chatId, userId);
-          await bot.unbanChatMember(chatId, userId);
+          try {
+            await bot.kickChatMember(chatId, userId);
+            await bot.unbanChatMember(chatId, userId);
+            logger.info(`已踢出用户: ${verification.username}`);
+          } catch (kickError) {
+            logger.error(`踢出用户失败:`, kickError.message);
+          }
 
           await bot.sendMessage(
             chatId,
