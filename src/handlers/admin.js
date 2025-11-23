@@ -3,109 +3,138 @@ const db = require('../database/db');
 const logger = require('../utils/logger');
 
 function setupAdminHandlers(bot) {
-  // 踢人命令 /kick [userId]
-  bot.onText(/\/kick(?:@\w+)?(?: (\d+))?/, async (msg, match) => {
+  // 踢人命令 /kick [userId|@username]
+  bot.onText(/\/kick(?:@\w+)?(?: (.+))?/, async (msg, match) => {
     const chatId = msg.chat.id;
-    const userIdParam = match[1];
+    const userParam = match[1]?.trim();
 
     await requireAdmin(bot, msg, async () => {
       if (!await isBotAdmin(bot, chatId)) {
         return bot.sendMessage(chatId, '⚠️ Bot需要管理员权限才能执行此操作！');
       }
 
-      let userToKick, username;
+      let userId, username;
 
-      // 优先使用回复消息，其次使用参数中的用户ID
+      // 优先使用回复消息，其次使用参数中的用户ID或用户名
       if (msg.reply_to_message) {
-        userToKick = msg.reply_to_message.from;
-        username = userToKick.username ? `@${userToKick.username}` : userToKick.first_name;
-      } else if (userIdParam) {
-        userToKick = { id: parseInt(userIdParam) };
-        username = `用户 ${userIdParam}`;
+        userId = msg.reply_to_message.from.id;
+        username = msg.reply_to_message.from.username
+          ? `@${msg.reply_to_message.from.username}`
+          : msg.reply_to_message.from.first_name;
+      } else if (userParam) {
+        // 判断是数字ID还是用户名
+        if (/^\d+$/.test(userParam)) {
+          // 纯数字，作为用户ID
+          userId = parseInt(userParam);
+          username = `用户 ${userParam}`;
+        } else {
+          // @username 或 username
+          const usernameStr = userParam.startsWith('@') ? userParam.substring(1) : userParam;
+          userId = `@${usernameStr}`;
+          username = `@${usernameStr}`;
+        }
       } else {
-        return bot.sendMessage(chatId, '❌ 请回复要踢出的用户的消息，或使用: /kick <用户ID>');
+        return bot.sendMessage(chatId, '❌ 请回复要踢出的用户的消息，或使用: /kick <用户ID|@用户名>');
       }
 
       try {
-        await bot.banChatMember(chatId, userToKick.id);
+        await bot.banChatMember(chatId, userId);
         // 立即解封，使其可以通过邀请链接重新加入
-        await bot.unbanChatMember(chatId, userToKick.id);
+        await bot.unbanChatMember(chatId, userId);
 
         await bot.sendMessage(chatId, `✅ 已踢出 ${username}`);
         db.incrementStat(chatId, 'kicks');
-        logger.info(`踢出用户: ${username} (${userToKick.id}) from chat ${chatId}`);
+        logger.info(`踢出用户: ${username} (${userId}) from chat ${chatId}`);
       } catch (error) {
         logger.error('踢人失败:', error);
-        bot.sendMessage(chatId, '❌ 踢人失败，请检查bot权限！');
+        bot.sendMessage(chatId, '❌ 踢人失败，请检查bot权限或用户ID/用户名是否正确！');
       }
     });
   });
 
-  // 封禁命令 /ban [userId]
-  bot.onText(/\/ban(?:@\w+)?(?: (\d+))?/, async (msg, match) => {
+  // 封禁命令 /ban [userId|@username]
+  bot.onText(/\/ban(?:@\w+)?(?: (.+))?/, async (msg, match) => {
     const chatId = msg.chat.id;
-    const userIdParam = match[1];
+    const userParam = match[1]?.trim();
 
     await requireAdmin(bot, msg, async () => {
       if (!await isBotAdmin(bot, chatId)) {
         return bot.sendMessage(chatId, '⚠️ Bot需要管理员权限才能执行此操作！');
       }
 
-      let userToBan, username;
+      let userId, username;
 
-      // 优先使用回复消息，其次使用参数中的用户ID
+      // 优先使用回复消息，其次使用参数中的用户ID或用户名
       if (msg.reply_to_message) {
-        userToBan = msg.reply_to_message.from;
-        username = userToBan.username ? `@${userToBan.username}` : userToBan.first_name;
-      } else if (userIdParam) {
-        userToBan = { id: parseInt(userIdParam) };
-        username = `用户 ${userIdParam}`;
+        userId = msg.reply_to_message.from.id;
+        username = msg.reply_to_message.from.username
+          ? `@${msg.reply_to_message.from.username}`
+          : msg.reply_to_message.from.first_name;
+      } else if (userParam) {
+        // 判断是数字ID还是用户名
+        if (/^\d+$/.test(userParam)) {
+          userId = parseInt(userParam);
+          username = `用户 ${userParam}`;
+        } else {
+          const usernameStr = userParam.startsWith('@') ? userParam.substring(1) : userParam;
+          userId = `@${usernameStr}`;
+          username = `@${usernameStr}`;
+        }
       } else {
-        return bot.sendMessage(chatId, '❌ 请回复要封禁的用户的消息，或使用: /ban <用户ID>');
+        return bot.sendMessage(chatId, '❌ 请回复要封禁的用户的消息，或使用: /ban <用户ID|@用户名>');
       }
 
       try {
-        await bot.banChatMember(chatId, userToBan.id);
+        await bot.banChatMember(chatId, userId);
         await bot.sendMessage(chatId, `🚫 已封禁 ${username}`);
         db.incrementStat(chatId, 'bans');
-        logger.info(`封禁用户: ${username} (${userToBan.id}) in chat ${chatId}`);
+        logger.info(`封禁用户: ${username} (${userId}) in chat ${chatId}`);
       } catch (error) {
         logger.error('封禁失败:', error);
-        bot.sendMessage(chatId, '❌ 封禁失败，请检查bot权限！');
+        bot.sendMessage(chatId, '❌ 封禁失败，请检查bot权限或用户ID/用户名是否正确！');
       }
     });
   });
 
-  // 解封命令 /unban [userId]
-  bot.onText(/\/unban(?:@\w+)?(?: (\d+))?/, async (msg, match) => {
+  // 解封命令 /unban [userId|@username]
+  bot.onText(/\/unban(?:@\w+)?(?: (.+))?/, async (msg, match) => {
     const chatId = msg.chat.id;
-    const userIdParam = match[1];
+    const userParam = match[1]?.trim();
 
     await requireAdmin(bot, msg, async () => {
       if (!await isBotAdmin(bot, chatId)) {
         return bot.sendMessage(chatId, '⚠️ Bot需要管理员权限才能执行此操作！');
       }
 
-      let userToUnban, username;
+      let userId, username;
 
-      // 优先使用回复消息，其次使用参数中的用户ID
+      // 优先使用回复消息，其次使用参数中的用户ID或用户名
       if (msg.reply_to_message) {
-        userToUnban = msg.reply_to_message.from;
-        username = userToUnban.username ? `@${userToUnban.username}` : userToUnban.first_name;
-      } else if (userIdParam) {
-        userToUnban = { id: parseInt(userIdParam) };
-        username = `用户 ${userIdParam}`;
+        userId = msg.reply_to_message.from.id;
+        username = msg.reply_to_message.from.username
+          ? `@${msg.reply_to_message.from.username}`
+          : msg.reply_to_message.from.first_name;
+      } else if (userParam) {
+        // 判断是数字ID还是用户名
+        if (/^\d+$/.test(userParam)) {
+          userId = parseInt(userParam);
+          username = `用户 ${userParam}`;
+        } else {
+          const usernameStr = userParam.startsWith('@') ? userParam.substring(1) : userParam;
+          userId = `@${usernameStr}`;
+          username = `@${usernameStr}`;
+        }
       } else {
-        return bot.sendMessage(chatId, '❌ 请回复要解封的用户的消息，或使用: /unban <用户ID>');
+        return bot.sendMessage(chatId, '❌ 请回复要解封的用户的消息，或使用: /unban <用户ID|@用户名>');
       }
 
       try {
-        await bot.unbanChatMember(chatId, userToUnban.id);
+        await bot.unbanChatMember(chatId, userId);
         await bot.sendMessage(chatId, `✅ 已解封 ${username}`);
-        logger.info(`解封用户: ${username} (${userToUnban.id}) in chat ${chatId}`);
+        logger.info(`解封用户: ${username} (${userId}) in chat ${chatId}`);
       } catch (error) {
         logger.error('解封失败:', error);
-        bot.sendMessage(chatId, '❌ 解封失败！');
+        bot.sendMessage(chatId, '❌ 解封失败，请检查用户ID/用户名是否正确！');
       }
     });
   });
@@ -135,37 +164,56 @@ function setupAdminHandlers(bot) {
     });
   });
 
-  // 禁言命令 /mute [userId] [minutes]
-  bot.onText(/\/mute(?:@\w+)?(?: (\d+))?(?: (\d+))?/, async (msg, match) => {
+  // 禁言命令 /mute [userId|@username] [minutes]
+  bot.onText(/\/mute(?:@\w+)?(?: (.+))?/, async (msg, match) => {
     const chatId = msg.chat.id;
-    const param1 = match[1]; // 可能是 userId 或 分钟数
-    const param2 = match[2]; // 如果存在，一定是分钟数
+    const params = match[1]?.trim();
 
     await requireAdmin(bot, msg, async () => {
       if (!await isBotAdmin(bot, chatId)) {
         return bot.sendMessage(chatId, '⚠️ Bot需要管理员权限才能执行此操作！');
       }
 
-      let userToMute, username, duration;
+      let userId, username, duration = 0;
 
       // 优先使用回复消息
       if (msg.reply_to_message) {
-        userToMute = msg.reply_to_message.from;
-        username = userToMute.username ? `@${userToMute.username}` : userToMute.first_name;
-        duration = param1 ? parseInt(param1) * 60 : 0; // param1 是分钟数
-      } else if (param1) {
-        // 使用用户ID
-        userToMute = { id: parseInt(param1) };
-        username = `用户 ${param1}`;
-        duration = param2 ? parseInt(param2) * 60 : 0; // param2 是分钟数
+        userId = msg.reply_to_message.from.id;
+        username = msg.reply_to_message.from.username
+          ? `@${msg.reply_to_message.from.username}`
+          : msg.reply_to_message.from.first_name;
+        // params 是分钟数
+        if (params && /^\d+$/.test(params)) {
+          duration = parseInt(params) * 60;
+        }
+      } else if (params) {
+        // 解析参数：可能是 "userId" 或 "@username" 或 "userId 30" 或 "@username 30"
+        const parts = params.split(/\s+/);
+        const userPart = parts[0];
+        const timePart = parts[1];
+
+        // 判断用户参数是数字ID还是用户名
+        if (/^\d+$/.test(userPart)) {
+          userId = parseInt(userPart);
+          username = `用户 ${userPart}`;
+        } else {
+          const usernameStr = userPart.startsWith('@') ? userPart.substring(1) : userPart;
+          userId = `@${usernameStr}`;
+          username = `@${usernameStr}`;
+        }
+
+        // 解析时间参数
+        if (timePart && /^\d+$/.test(timePart)) {
+          duration = parseInt(timePart) * 60;
+        }
       } else {
-        return bot.sendMessage(chatId, '❌ 请回复要禁言的用户的消息，或使用: /mute <用户ID> [分钟数]');
+        return bot.sendMessage(chatId, '❌ 请回复要禁言的用户的消息，或使用: /mute <用户ID|@用户名> [分钟数]');
       }
 
       try {
         const untilDate = duration > 0 ? Math.floor(Date.now() / 1000) + duration : 0;
 
-        await bot.restrictChatMember(chatId, userToMute.id, {
+        await bot.restrictChatMember(chatId, userId, {
           until_date: untilDate,
           can_send_messages: false,
           can_send_media_messages: false,
@@ -176,39 +224,48 @@ function setupAdminHandlers(bot) {
         const timeText = duration > 0 ? `${duration / 60}分钟` : '永久';
         await bot.sendMessage(chatId, `🔇 已禁言 ${username} (${timeText})`);
         db.incrementStat(chatId, 'mutes');
-        logger.info(`禁言用户: ${username} (${userToMute.id}) for ${timeText} in chat ${chatId}`);
+        logger.info(`禁言用户: ${username} (${userId}) for ${timeText} in chat ${chatId}`);
       } catch (error) {
         logger.error('禁言失败:', error);
-        bot.sendMessage(chatId, '❌ 禁言失败，请检查bot权限！');
+        bot.sendMessage(chatId, '❌ 禁言失败，请检查bot权限或用户ID/用户名是否正确！');
       }
     });
   });
 
-  // 解除禁言命令 /unmute [userId]
-  bot.onText(/\/unmute(?:@\w+)?(?: (\d+))?/, async (msg, match) => {
+  // 解除禁言命令 /unmute [userId|@username]
+  bot.onText(/\/unmute(?:@\w+)?(?: (.+))?/, async (msg, match) => {
     const chatId = msg.chat.id;
-    const userIdParam = match[1];
+    const userParam = match[1]?.trim();
 
     await requireAdmin(bot, msg, async () => {
       if (!await isBotAdmin(bot, chatId)) {
         return bot.sendMessage(chatId, '⚠️ Bot需要管理员权限才能执行此操作！');
       }
 
-      let userToUnmute, username;
+      let userId, username;
 
-      // 优先使用回复消息，其次使用参数中的用户ID
+      // 优先使用回复消息，其次使用参数中的用户ID或用户名
       if (msg.reply_to_message) {
-        userToUnmute = msg.reply_to_message.from;
-        username = userToUnmute.username ? `@${userToUnmute.username}` : userToUnmute.first_name;
-      } else if (userIdParam) {
-        userToUnmute = { id: parseInt(userIdParam) };
-        username = `用户 ${userIdParam}`;
+        userId = msg.reply_to_message.from.id;
+        username = msg.reply_to_message.from.username
+          ? `@${msg.reply_to_message.from.username}`
+          : msg.reply_to_message.from.first_name;
+      } else if (userParam) {
+        // 判断是数字ID还是用户名
+        if (/^\d+$/.test(userParam)) {
+          userId = parseInt(userParam);
+          username = `用户 ${userParam}`;
+        } else {
+          const usernameStr = userParam.startsWith('@') ? userParam.substring(1) : userParam;
+          userId = `@${usernameStr}`;
+          username = `@${usernameStr}`;
+        }
       } else {
-        return bot.sendMessage(chatId, '❌ 请回复要解除禁言的用户的消息，或使用: /unmute <用户ID>');
+        return bot.sendMessage(chatId, '❌ 请回复要解除禁言的用户的消息，或使用: /unmute <用户ID|@用户名>');
       }
 
       try {
-        await bot.restrictChatMember(chatId, userToUnmute.id, {
+        await bot.restrictChatMember(chatId, userId, {
           can_send_messages: true,
           can_send_media_messages: true,
           can_send_other_messages: true,
@@ -216,10 +273,10 @@ function setupAdminHandlers(bot) {
         });
 
         await bot.sendMessage(chatId, `🔊 已解除 ${username} 的禁言`);
-        logger.info(`解除禁言: ${username} (${userToUnmute.id}) in chat ${chatId}`);
+        logger.info(`解除禁言: ${username} (${userId}) in chat ${chatId}`);
       } catch (error) {
         logger.error('解除禁言失败:', error);
-        bot.sendMessage(chatId, '❌ 解除禁言失败！');
+        bot.sendMessage(chatId, '❌ 解除禁言失败，请检查用户ID/用户名是否正确！');
       }
     });
   });
