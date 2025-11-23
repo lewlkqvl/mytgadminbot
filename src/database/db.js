@@ -112,20 +112,24 @@ class Database {
   }
 
   addFilter(chatId, keyword) {
-    const filter = { chatId, keyword: keyword.toLowerCase() };
+    const filter = { chatId: Number(chatId), keyword: keyword.toLowerCase() };
     this.filters.push(filter);
     this.saveFilters();
+    logger.info(`过滤器已添加到内存: chatId=${chatId} (${typeof chatId}), keyword="${keyword}"`);
   }
 
   removeFilter(chatId, keyword) {
     this.filters = this.filters.filter(
-      f => !(f.chatId === chatId && f.keyword === keyword.toLowerCase())
+      f => !(f.chatId === Number(chatId) && f.keyword === keyword.toLowerCase())
     );
     this.saveFilters();
   }
 
   getFilters(chatId) {
-    return this.filters.filter(f => f.chatId === chatId);
+    const numChatId = Number(chatId);
+    const results = this.filters.filter(f => f.chatId === numChatId);
+    logger.debug(`getFilters: chatId=${chatId} (${typeof chatId}), 转换为=${numChatId}, 找到 ${results.length} 个过滤器, 总共 ${this.filters.length} 个`);
+    return results;
   }
 
   checkFilter(chatId, text) {
@@ -153,26 +157,26 @@ class Database {
   }
 
   addAutoReply(chatId, trigger, response) {
-    const reply = { chatId, trigger: trigger.toLowerCase(), response };
+    const reply = { chatId: Number(chatId), trigger: trigger.toLowerCase(), response };
     this.autoReplies.push(reply);
     this.saveAutoReplies();
   }
 
   removeAutoReply(chatId, trigger) {
     this.autoReplies = this.autoReplies.filter(
-      r => !(r.chatId === chatId && r.trigger === trigger.toLowerCase())
+      r => !(r.chatId === Number(chatId) && r.trigger === trigger.toLowerCase())
     );
     this.saveAutoReplies();
   }
 
   getAutoReplies(chatId) {
-    return this.autoReplies.filter(r => r.chatId === chatId);
+    return this.autoReplies.filter(r => r.chatId === Number(chatId));
   }
 
   findAutoReply(chatId, text) {
     const lowerText = text.toLowerCase();
     return this.autoReplies.find(
-      r => r.chatId === chatId && lowerText.includes(r.trigger)
+      r => r.chatId === Number(chatId) && lowerText.includes(r.trigger)
     );
   }
 
