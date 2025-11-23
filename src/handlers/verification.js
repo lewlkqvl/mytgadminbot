@@ -59,6 +59,9 @@ function setupVerificationHandler(bot) {
         // 发送验证码图片
         const photoMsg = await bot.sendPhoto(chatId, captchaImage, {
           caption: '📷 请输入上图中的验证码'
+        }, {
+          filename: 'captcha.png',
+          contentType: 'image/png'
         });
 
         // 保存验证信息
