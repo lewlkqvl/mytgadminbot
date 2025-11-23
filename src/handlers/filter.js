@@ -46,20 +46,25 @@ function setupFilterHandler(bot) {
       const filters = db.getFilters(chatId);
 
       if (filters.length === 0) {
-        return bot.sendMessage(chatId, '🔍 暂无过滤关键词');
+        return bot.sendMessage(chatId, '🔍 暂无过滤关键词\n\n💡 使用 /filter add <关键词> 来添加过滤词');
       }
 
-      let text = '🔍 过滤关键词列表:\n\n';
+      let text = `🔍 过滤关键词列表 (共 ${filters.length} 个):\n\n`;
       filters.forEach((filter, index) => {
         text += `${index + 1}. "${filter.keyword}"\n`;
       });
 
+      text += '\n💡 发送包含以上关键词的消息将被自动删除';
+      text += '\n⚠️ 确保 Bot 拥有管理员权限才能删除消息';
+
       bot.sendMessage(chatId, text);
+      logger.info(`查看过滤关键词列表 in chat ${chatId}: ${filters.length} 个关键词`);
     });
   });
 
   // 监听消息进行过滤和反垃圾检测
   bot.on('message', async (msg) => {
+    // 基本检查
     if (!msg.text || msg.text.startsWith('/')) return;
     if (msg.chat.type !== 'group' && msg.chat.type !== 'supergroup') return;
 
@@ -67,8 +72,14 @@ function setupFilterHandler(bot) {
     const userId = msg.from.id;
     const text = msg.text;
 
+    // 添加调试日志
+    logger.debug(`[Filter] 收到群组消息 in chat ${chatId}: "${text}"`);
+
     try {
       // 检查关键词过滤
+      const filters = db.getFilters(chatId);
+      logger.debug(`[Filter] 当前群组有 ${filters.length} 个过滤关键词`);
+
       const hasFilteredWord = db.checkFilter(chatId, text);
 
       if (hasFilteredWord) {
