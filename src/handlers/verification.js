@@ -38,37 +38,75 @@ function setupVerificationHandler(bot) {
         // 生成随机数学题
         const num1 = Math.floor(Math.random() * 10) + 1;
         const num2 = Math.floor(Math.random() * 10) + 1;
-        const answer = num1 + num2;
+        const correctAnswer = num1 + num2;
+
+        // 生成错误答案选项
+        const wrongAnswers = [];
+        while (wrongAnswers.length < 3) {
+          const wrong = correctAnswer + Math.floor(Math.random() * 10) - 5;
+          if (wrong !== correctAnswer && wrong > 0 && !wrongAnswers.includes(wrong)) {
+            wrongAnswers.push(wrong);
+          }
+        }
+
+        // 混合正确答案和错误答案
+        const allAnswers = [correctAnswer, ...wrongAnswers];
+        // 随机排序
+        allAnswers.sort(() => Math.random() - 0.5);
+
+        // 创建内联键盘
+        const keyboard = {
+          inline_keyboard: [
+            allAnswers.map(ans => ({
+              text: ans.toString(),
+              callback_data: `verify_${userId}_${ans}`
+            }))
+          ]
+        };
 
         const verificationMessage = `
 👋 欢迎 ${username}！
 
-🤖 为了验证你不是机器人，请在 ${config.verificationTimeout} 秒内回答：
+🤖 为了验证你不是机器人，请在 ${config.verificationTimeout} 秒内点击正确答案：
 
 ❓ ${num1} + ${num2} = ?
 
-请直接发送答案数字。
+请点击下方按钮选择答案。
         `.trim();
 
-        const sentMsg = await bot.sendMessage(chatId, verificationMessage);
+        const sentMsg = await bot.sendMessage(chatId, verificationMessage, {
+          reply_markup: keyboard
+        });
 
         // 保存验证信息
         pendingVerifications.set(userId, {
           chatId,
-          answer,
+          correctAnswer,
           messageId: sentMsg.message_id,
           username,
           timestamp: Date.now()
         });
 
         // 设置超时
-        setTimeout(async () => {
+        const timeoutId = setTimeout(async () => {
           if (pendingVerifications.has(userId)) {
             try {
               await bot.kickChatMember(chatId, userId);
               await bot.unbanChatMember(chatId, userId);
-              await bot.sendMessage(chatId, `⏰ ${username} 验证超时，已被移出群组`);
-              await bot.deleteMessage(chatId, sentMsg.message_id);
+
+              // 编辑消息显示超时
+              await bot.editMessageText(
+                `⏰ ${username} 验证超时，已被移出群组`,
+                {
+                  chat_id: chatId,
+                  message_id: sentMsg.message_id
+                }
+              );
+
+              // 3秒后删除消息
+              setTimeout(() => {
+                bot.deleteMessage(chatId, sentMsg.message_id).catch(() => {});
+              }, 3000);
 
               pendingVerifications.delete(userId);
               logger.info(`用户验证超时: ${username} in chat ${chatId}`);
@@ -78,6 +116,9 @@ function setupVerificationHandler(bot) {
           }
         }, config.verificationTimeout * 1000);
 
+        // 保存 timeout ID 以便在验证成功时清除
+        pendingVerifications.get(userId).timeoutId = timeoutId;
+
         logger.info(`新用户需要验证: ${username} in chat ${chatId}`);
       } catch (error) {
         logger.error('设置用户验证失败:', error);
@@ -85,47 +126,85 @@ function setupVerificationHandler(bot) {
     }
   });
 
-  // 监听验证回答
-  bot.on('message', async (msg) => {
-    if (!msg.text) return;
+  // 处理验证按钮点击
+  bot.on('callback_query', async (query) => {
+    const data = query.data;
 
-    const userId = msg.from.id;
-    const chatId = msg.chat.id;
+    // 检查是否是验证回调
+    if (!data.startsWith('verify_')) {
+      return;
+    }
 
-    if (pendingVerifications.has(userId)) {
-      const verification = pendingVerifications.get(userId);
-      const userAnswer = parseInt(msg.text.trim());
+    const parts = data.split('_');
+    const userId = parseInt(parts[1]);
+    const selectedAnswer = parseInt(parts[2]);
 
-      try {
-        // 删除用户的回答消息
-        await bot.deleteMessage(chatId, msg.message_id);
+    // 检查是否是本人点击
+    if (query.from.id !== userId) {
+      return bot.answerCallbackQuery(query.id, {
+        text: '⚠️ 这不是你的验证消息！',
+        show_alert: true
+      });
+    }
 
-        if (userAnswer === verification.answer) {
-          // 验证成功，解除禁言
-          await bot.restrictChatMember(chatId, userId, {
-            can_send_messages: true,
-            can_send_media_messages: true,
-            can_send_other_messages: true,
-            can_add_web_page_previews: true
-          });
+    if (!pendingVerifications.has(userId)) {
+      return bot.answerCallbackQuery(query.id, {
+        text: '❌ 验证已过期',
+        show_alert: false
+      });
+    }
 
-          await bot.sendMessage(chatId, `✅ ${verification.username} 验证成功，欢迎加入！`);
-          await bot.deleteMessage(chatId, verification.messageId);
+    const verification = pendingVerifications.get(userId);
+    const chatId = verification.chatId;
 
-          pendingVerifications.delete(userId);
-          logger.info(`用户验证成功: ${verification.username} in chat ${chatId}`);
-        } else {
-          // 答案错误
-          await bot.sendMessage(
-            chatId,
-            `❌ ${verification.username} 答案错误，请重新回答`,
-            { reply_to_message_id: verification.messageId }
-          );
-          logger.info(`用户验证失败: ${verification.username} in chat ${chatId}`);
-        }
-      } catch (error) {
-        logger.error('处理验证回答失败:', error);
+    try {
+      if (selectedAnswer === verification.correctAnswer) {
+        // 验证成功
+        clearTimeout(verification.timeoutId);
+
+        // 解除禁言
+        await bot.restrictChatMember(chatId, userId, {
+          can_send_messages: true,
+          can_send_media_messages: true,
+          can_send_other_messages: true,
+          can_add_web_page_previews: true
+        });
+
+        // 编辑消息显示成功
+        await bot.editMessageText(
+          `✅ ${verification.username} 验证成功，欢迎加入！`,
+          {
+            chat_id: chatId,
+            message_id: verification.messageId
+          }
+        );
+
+        // 3秒后删除消息
+        setTimeout(() => {
+          bot.deleteMessage(chatId, verification.messageId).catch(() => {});
+        }, 3000);
+
+        bot.answerCallbackQuery(query.id, {
+          text: '✅ 验证成功！',
+          show_alert: false
+        });
+
+        pendingVerifications.delete(userId);
+        logger.info(`用户验证成功: ${verification.username} in chat ${chatId}`);
+      } else {
+        // 答案错误
+        bot.answerCallbackQuery(query.id, {
+          text: '❌ 答案错误，请重新选择',
+          show_alert: true
+        });
+        logger.info(`用户验证失败: ${verification.username} 选择了错误答案 ${selectedAnswer}`);
       }
+    } catch (error) {
+      logger.error('处理验证回答失败:', error);
+      bot.answerCallbackQuery(query.id, {
+        text: '❌ 处理失败，请重试',
+        show_alert: false
+      });
     }
   });
 
@@ -134,6 +213,7 @@ function setupVerificationHandler(bot) {
     const now = Date.now();
     for (const [userId, verification] of pendingVerifications.entries()) {
       if (now - verification.timestamp > config.verificationTimeout * 1000) {
+        clearTimeout(verification.timeoutId);
         pendingVerifications.delete(userId);
       }
     }
