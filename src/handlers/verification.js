@@ -79,7 +79,7 @@ function setupVerificationHandler(bot) {
         const timeoutId = setTimeout(async () => {
           if (pendingVerifications.has(userId)) {
             try {
-              await bot.kickChatMember(chatId, userId);
+              await bot.banChatMember(chatId, userId);
               await bot.unbanChatMember(chatId, userId);
 
               await bot.sendMessage(chatId, `⏰ ${username} 验证超时，已被移出群组`);
@@ -186,7 +186,7 @@ function setupVerificationHandler(bot) {
           clearTimeout(verification.timeoutId);
 
           try {
-            await bot.kickChatMember(chatId, userId);
+            await bot.banChatMember(chatId, userId);
             await bot.unbanChatMember(chatId, userId);
             logger.info(`已踢出用户: ${verification.username}`);
           } catch (kickError) {

@@ -21,7 +21,7 @@ function setupAdminHandlers(bot) {
       const username = userToKick.username ? `@${userToKick.username}` : userToKick.first_name;
 
       try {
-        await bot.kickChatMember(chatId, userToKick.id);
+        await bot.banChatMember(chatId, userToKick.id);
         // 立即解封，使其可以通过邀请链接重新加入
         await bot.unbanChatMember(chatId, userToKick.id);
 
@@ -52,7 +52,7 @@ function setupAdminHandlers(bot) {
       const username = userToBan.username ? `@${userToBan.username}` : userToBan.first_name;
 
       try {
-        await bot.kickChatMember(chatId, userToBan.id);
+        await bot.banChatMember(chatId, userToBan.id);
         await bot.sendMessage(chatId, `🚫 已封禁 ${username}`);
         db.incrementStat(chatId, 'bans');
         logger.info(`封禁用户: ${username} in chat ${chatId}`);
